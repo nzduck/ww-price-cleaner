@@ -1,0 +1,47 @@
+# Node.js dependencies
+node_modules/
+
+# Output directories
+dist/
+build/
+output/
+
+# Local development settings
+.env
+
+# Logs
+*.log
+
+# MacOS specific files
+.DS_Store
+
+# Windows specific files
+Thumbs.db
+Desktop.ini
+
+# Chrome extension specific files
+*.pem
+
+# Temporary files
+*.tmp
+*.temp
+
+# Visual Studio Code settings
+.vscode/
+
+# Ignore VS Code workspace settings
+*.code-workspace
+
+# Ignore minified and compiled files
+*.min.js
+*.map
+
+# Ignore coverage reports
+coverage/
+
+# Ignore personal configuration files
+config/
+
+# Ignore miscellaneous
+*.bak
+*.old
