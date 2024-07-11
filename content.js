@@ -269,7 +269,12 @@ class ProductPriceAndWeightInfo {
                     return ProductVariations.PRODUCT_2;
                 }
                 else {
-                    return ProductVariations.PRODUCT_5;
+                    if (this.#numItemsInPackage > 1) {
+                        return ProductVariations.PRODUCT_6;
+                    }
+                    else {
+                        return ProductVariations.PRODUCT_5;
+                    }
                 }                
             }
         }
@@ -313,6 +318,9 @@ class ProductPriceAndWeightInfo {
             if (this.productVariation === ProductVariations.PRODUCT_5) {
                 return this.advertisedPrice.toFixed(2);
             }
+            else if (this.#productVariation === ProductVariations.PRODUCT_6) {
+                return this.unitPricePerItem;
+            }
             else if (this.unitPricePerItem && (this.unitPricePerItem || 0) > 0) {
                 return this.unitPricePerItem.toFixed(2);
             }
@@ -353,17 +361,20 @@ class ProductPriceAndWeightInfo {
     // Get the calculated price of this item
     get unitPricePerItem() {
         let price;
-        
+        if (this.pricingType === PricingTypes.BY_EACH && this.#perUnitQuantity === 1) {
+            price = this.#principleUnitPrice;
+            if (price !== Infinity && price !== 0 && !Number.isNaN(price)) {
+                return price;
+            }
+        }
         price = this.#perUnitQuantityPrice / (this.#perUnitQuantity / 100);
         if (price !== Infinity && price !== 0 && !Number.isNaN(price)) {
             return price;
         }
-
         price = this.advertisedPrice / (this.#packageQuantity / 100);
         if (price !== Infinity && price !== 0 && !Number.isNaN(price)) {
             return price;
         }
-
         return null;
     }
 
@@ -658,7 +669,8 @@ const ProductVariations = Object.freeze({
     PRODUCT_2:  2,
     PRODUCT_3:  3,
     PRODUCT_4:  4,
-    PRODUCT_5:  5
+    PRODUCT_5:  5,
+    PRODUCT_6:  6
 })
 
 function splitCurrency(amount) {
