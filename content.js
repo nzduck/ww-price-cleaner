@@ -334,23 +334,8 @@ class ProductPriceAndWeightInfo {
         else {
             return `$${this.sortableUnitPrice} per ${this.#units}`;
         }
-
-
-        // if (this.#authPricingType === PricingTypes.BY_EACH) {
-        //     if (this.productVariation === ProductVariations.PRODUCT_5) {
-        //         return `$${amt} ${this.#units}`;
-        //     }
-        //     else if (this.unitPricePerItem && (this.unitPricePerItem || 0) > 0) {
-        //         return `$${amt} ${this.#units}`;
-        //     }
-        //     else {
-        //         return `$${amt} ${this.#units}`;
-        //     }
-        // } 
-        // else {
-        //     return `$${amt} per ${this.#units}`;
-        // }
     }
+
 
     get #units() {
         if (this.#authPricingType === PricingTypes.BY_WEIGHT) {
@@ -369,12 +354,12 @@ class ProductPriceAndWeightInfo {
     get unitPricePerItem() {
         let price;
         
-        price = this.advertisedPrice / (this.#packageQuantity / 100);
+        price = this.#perUnitQuantityPrice / (this.#perUnitQuantity / 100);
         if (price !== Infinity && price !== 0 && !Number.isNaN(price)) {
             return price;
         }
 
-        price = this.#perUnitQuantityPrice / (this.#perUnitQuantity / 100);
+        price = this.advertisedPrice / (this.#packageQuantity / 100);
         if (price !== Infinity && price !== 0 && !Number.isNaN(price)) {
             return price;
         }
