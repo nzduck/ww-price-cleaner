@@ -333,20 +333,20 @@ class ProductPriceAndWeightInfo {
                 return this.advertisedPrice.toFixed(2);
             }
             else if (this.#productVariation === ProductVariations.PRODUCT_6) {
-                return this.unitPricePerItem;
+                return this.unitPricePerItem.toFixed(2);
             }
             else if (this.unitPricePerItem && (this.unitPricePerItem || 0) > 0) {
-                return this.unitPricePerItem;
+                return this.unitPricePerItem.toFixed(2);
             }
             else {
-                return this.advertisedPrice;
+                return this.advertisedPrice.toFixed(2);
             }
         } 
         else if (this.#productVariation === ProductVariations.PRODUCT_7) {
-            return this.unitPricePerItem;
+            return this.unitPricePerItem.toFixed(2);
         }
         else {
-            return this.unitPricePerItem;
+            return this.unitPricePerItem.toFixed(2);
         }
     }
 
@@ -380,39 +380,27 @@ class ProductPriceAndWeightInfo {
         let price;
 
         if (this.productVariation == ProductVariations.PRODUCT_7) {
-            price = (this.advertisedPrice / (this.#packageQuantity / 100));
-            if (price !== Infinity && price !== 0 && !Number.isNaN(price)) {
-                return price;
-            }
+            price = this.advertisedPrice / (this.#packageQuantity / 100);
+        } 
+        else if (this.#hasWeightInWeightString && this.pricingType === PricingTypes.BY_EACH && this.#perUnitQuantity === 1) {
+            price = this.advertisedPrice / (this.#packageQuantity / 100);
         }
-
-        if (this.#hasWeightInWeightString) {
-            if (this.pricingType === PricingTypes.BY_EACH && this.#perUnitQuantity === 1) {
-                price = this.advertisedPrice / (this.#packageQuantity / 100);
-                if (price !== Infinity && price !== 0 && !Number.isNaN(price)) {
-                    return price;
-                }
-            }
+        else if (this.pricingType === PricingTypes.BY_EACH && this.#perUnitQuantity === 1) {
+            price = this.#principleUnitPrice;
+        }
+        else if (this.#perUnitQuantityPrice !== "" && this.#perUnitQuantity > 0) {
+            price = this.#perUnitQuantityPrice / (this.#perUnitQuantity / 100);
         }
         else {
-            if (this.pricingType === PricingTypes.BY_EACH && this.#perUnitQuantity === 1) {
-                price = this.#principleUnitPrice;
-                if (price !== Infinity && price !== 0 && !Number.isNaN(price)) {
-                    return price;
-                }
-            }
+            price = this.advertisedPrice / (this.#packageQuantity / 100);
         }
 
-        price = this.#perUnitQuantityPrice / (this.#perUnitQuantity / 100);
         if (price !== Infinity && price !== 0 && !Number.isNaN(price)) {
-            return price;
+            return parseFloat(price);
         }
-
-        price = this.advertisedPrice / (this.#packageQuantity / 100);
-        if (price !== Infinity && price !== 0 && !Number.isNaN(price)) {
-            return price;
+        else {
+            return null;
         }
-        return null;
     }
 
     get pricingType() {
