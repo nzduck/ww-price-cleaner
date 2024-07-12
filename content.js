@@ -208,14 +208,23 @@ class ProductPriceAndWeightInfo {
 
         this.#normalizePerUnitQuantityValues();
 
-        if (this.#packagePricingType === PricingTypes.BY_VOLUME || this.#perUnitQuantityPricingType === PricingTypes.BY_VOLUME) {
+        // Figure out the PricingType based on the data we've gathered
+        if (this.#packagePricingType === PricingTypes.BY_EACH || this.#perUnitQuantityPricingType === PricingTypes.BY_EACH) {
+            if (this.#hasWeightInWeightString) {
+                this.#authPricingType = PricingTypes.BY_WEIGHT;
+            }
+            else {
+                this.#authPricingType = PricingTypes.BY_EACH;
+            }
+        }
+        else if (this.#packagePricingType === PricingTypes.BY_VOLUME || this.#perUnitQuantityPricingType === PricingTypes.BY_VOLUME) {
             this.#authPricingType = PricingTypes.BY_VOLUME;
         }
         else if (this.#packagePricingType === PricingTypes.BY_WEIGHT || this.#perUnitQuantityPricingType === PricingTypes.BY_WEIGHT) {
             this.#authPricingType = PricingTypes.BY_WEIGHT;
         }
         else {
-            this.#authPricingType = PricingTypes.BY_EACH;
+            console.log('Unknown pricing type: ', [domProductTitleString, domUnitPriceString, domWeightString]);
         }
 
         // Calculate the principle unit price based on the domUnitPriceString
@@ -262,7 +271,12 @@ class ProductPriceAndWeightInfo {
         } 
         else {
             if (this.#hasWeightInWeightString) {
-                return ProductVariations.PRODUCT_3;
+                if (this.#authPricingType === PricingTypes.BY_WEIGHT) {
+                    return ProductVariations.PRODUCT_7;
+                }
+                else {
+                    return ProductVariations.PRODUCT_3;
+                }
             }
             else {
                 if (hasKgInCents) {
@@ -316,20 +330,23 @@ class ProductPriceAndWeightInfo {
     get sortableUnitPrice() {
         if (this.#authPricingType === PricingTypes.BY_EACH) {
             if (this.productVariation === ProductVariations.PRODUCT_5) {
-                return this.advertisedPrice.toFixed(2);
+                return this.advertisedPrice;
             }
             else if (this.#productVariation === ProductVariations.PRODUCT_6) {
                 return this.unitPricePerItem;
             }
             else if (this.unitPricePerItem && (this.unitPricePerItem || 0) > 0) {
-                return this.unitPricePerItem.toFixed(2);
+                return this.unitPricePerItem;
             }
             else {
-                return this.advertisedPrice.toFixed(2);
+                return this.advertisedPrice;
             }
         } 
+        else if (this.#productVariation === ProductVariations.PRODUCT_7) {
+            return this.unitPricePerItem;
+        }
         else {
-            return this.unitPricePerItem.toFixed(2);
+            return this.unitPricePerItem;
         }
     }
 
@@ -337,10 +354,10 @@ class ProductPriceAndWeightInfo {
     // A free-text formatted unit price string
     get friendlyPriceString() {
         if (this.#authPricingType === PricingTypes.BY_EACH) {
-            return `$${this.sortableUnitPrice} ${this.#units}`;
+            return `$${this.sortableUnitPrice.toFixed(2)} ${this.#units}`;
         }
         else {
-            return `$${this.sortableUnitPrice} per ${this.#units}`;
+            return `$${this.sortableUnitPrice.toFixed(2)} per ${this.#units}`;
         }
     }
 
@@ -361,16 +378,36 @@ class ProductPriceAndWeightInfo {
     // Get the calculated price of this item
     get unitPricePerItem() {
         let price;
-        if (this.pricingType === PricingTypes.BY_EACH && this.#perUnitQuantity === 1) {
-            price = this.#principleUnitPrice;
+
+        if (this.productVariation == ProductVariations.PRODUCT_7) {
+            price = (this.advertisedPrice / (this.#packageQuantity / 100));
             if (price !== Infinity && price !== 0 && !Number.isNaN(price)) {
                 return price;
             }
         }
+
+        if (this.#hasWeightInWeightString) {
+            if (this.pricingType === PricingTypes.BY_EACH && this.#perUnitQuantity === 1) {
+                price = this.advertisedPrice / (this.#packageQuantity / 100);
+                if (price !== Infinity && price !== 0 && !Number.isNaN(price)) {
+                    return price;
+                }
+            }
+        }
+        else {
+            if (this.pricingType === PricingTypes.BY_EACH && this.#perUnitQuantity === 1) {
+                price = this.#principleUnitPrice;
+                if (price !== Infinity && price !== 0 && !Number.isNaN(price)) {
+                    return price;
+                }
+            }
+        }
+
         price = this.#perUnitQuantityPrice / (this.#perUnitQuantity / 100);
         if (price !== Infinity && price !== 0 && !Number.isNaN(price)) {
             return price;
         }
+
         price = this.advertisedPrice / (this.#packageQuantity / 100);
         if (price !== Infinity && price !== 0 && !Number.isNaN(price)) {
             return price;
@@ -573,7 +610,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 
                 // Add the unit price to the card element as a new data value
                 element.setAttribute('data-sort-value-a', product.pricingType);
-                element.setAttribute('data-sort-value-b', product.sortableUnitPrice);
+                element.setAttribute('data-sort-value-b', product.sortableUnitPrice.toFixed(2));
 
                 // Find the image element and add a title attribute showing the unit price string
                 let img = element.querySelector('img');
@@ -670,7 +707,8 @@ const ProductVariations = Object.freeze({
     PRODUCT_3:  3,
     PRODUCT_4:  4,
     PRODUCT_5:  5,
-    PRODUCT_6:  6
+    PRODUCT_6:  6,
+    PRODUCT_7:  7
 })
 
 function splitCurrency(amount) {
