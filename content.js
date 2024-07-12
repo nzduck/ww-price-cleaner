@@ -330,7 +330,7 @@ class ProductPriceAndWeightInfo {
     get sortableUnitPrice() {
         if (this.#authPricingType === PricingTypes.BY_EACH) {
             if (this.productVariation === ProductVariations.PRODUCT_5) {
-                return this.advertisedPrice;
+                return this.advertisedPrice.toFixed(2);
             }
             else if (this.#productVariation === ProductVariations.PRODUCT_6) {
                 return this.unitPricePerItem;
@@ -354,10 +354,10 @@ class ProductPriceAndWeightInfo {
     // A free-text formatted unit price string
     get friendlyPriceString() {
         if (this.#authPricingType === PricingTypes.BY_EACH) {
-            return `$${this.sortableUnitPrice.toFixed(2)} ${this.#units}`;
+            return `$${this.sortableUnitPrice} ${this.#units}`;
         }
         else {
-            return `$${this.sortableUnitPrice.toFixed(2)} per ${this.#units}`;
+            return `$${this.sortableUnitPrice} per ${this.#units}`;
         }
     }
 
@@ -610,7 +610,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 
                 // Add the unit price to the card element as a new data value
                 element.setAttribute('data-sort-value-a', product.pricingType);
-                element.setAttribute('data-sort-value-b', product.sortableUnitPrice.toFixed(2));
+                element.setAttribute('data-sort-value-b', product.sortableUnitPrice);
 
                 // Find the image element and add a title attribute showing the unit price string
                 let img = element.querySelector('img');
