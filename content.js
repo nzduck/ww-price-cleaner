@@ -14,21 +14,21 @@ function injectCustomCSS() {
         link.rel = 'stylesheet';
         link.type = 'text/css';
         link.href = chrome.runtime.getURL('page-styles.css');
-      
+
         link.onload = () => {
             console.log('Custom CSS loaded successfully');
             resolve();
         };
-      
+
         link.onerror = (error) => {
             console.error('Error loading custom CSS:', error);
             reject(error);
         };
-  
+
         (document.head || document.documentElement).appendChild(link);
     });
 }
-  
+
 // Inject CSS when the content script runs
 injectCustomCSS()
     .then(() => {
@@ -46,7 +46,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         if (existingLink) {
             existingLink.disabled = !existingLink.disabled;
             console.log('CSS toggled:', existingLink.disabled ? 'off' : 'on');
-        } 
+        }
         else {
             injectCustomCSS();
         }
@@ -58,7 +58,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 function onProductGridAdded(callback) {
     const targetNode = document.body;
     const config = { childList: true, subtree: true };
-    
+
     const observer = new MutationObserver((mutationsList, observer) => {
         const productGrid = document.querySelector('product-grid');
         if (productGrid) {
@@ -98,7 +98,7 @@ function observeProductGridChanges(productGrid) {
         timeout = setTimeout(() => {
             console.log('product-grid children have changed');
             // Perform desired actions here
-        }, 100); // 100ms debounce 
+        }, 100); // 100ms debounce
     });
 
     observer.observe(productGrid, config);
@@ -143,9 +143,13 @@ function getTextContentOrDefault(rootElement, elementSelector, defaultValue = ''
 class ProductPriceAndWeightInfo {
 
     // Stores the raw string values retrieved from the DOM for a product
+    #domWeightString;
+    #domUnitPriceString;
+    #domProductTitleString;
+    #domPriceCentsWeightString;
     #domPriceDollarsString;
     #domPriceCentsString;
-    #domProductTitleString;
+    #domSingleUnitPriceString;
 
     // Stores the 'per package' values related to a product
     #packageQuantity;
@@ -162,30 +166,20 @@ class ProductPriceAndWeightInfo {
     #perUnitQuantityPrice;
     #principleUnitPrice;
 
-    #authPricingType;
-    #productVariation;
-
     constructor (domElement) {
         // Read the values we need from DOM strings
-        const domWeightString = replaceNbsp(getTextContentOrDefault(domElement, 'span.size'));
-        const domUnitPriceString = getTextContentOrDefault(domElement, 'product-price-meta span.cupPrice');
-        const domProductTitleString = replaceNbsp(getTextContentOrDefault(domElement, '.product-entry > h3'));
-        const domPriceDollarsString = replaceNbsp(getTextContentOrDefault(domElement, 'h3.presentPrice > em'));
-        const domPriceCentsWeightString = replaceNbsp(getTextContentOrDefault(domElement, 'h3.presentPrice > span'));
+        this.#domWeightString = replaceNbsp(getTextContentOrDefault(domElement, 'span.size'));
+        this.#domUnitPriceString = getTextContentOrDefault(domElement, 'product-price-meta span.cupPrice');
+        this.#domSingleUnitPriceString = replaceNbsp(getTextContentOrDefault(domElement, 'p.price-single-unit-text'));
+        this.#domProductTitleString = replaceNbsp(getTextContentOrDefault(domElement, '.product-entry > h3'));
+        this.#domPriceDollarsString = replaceNbsp(getTextContentOrDefault(domElement, 'h3.presentPrice > em'));
+        this.#domPriceCentsWeightString = replaceNbsp(getTextContentOrDefault(domElement, 'h3.presentPrice > span'));
 
-        // ### Pull values out of the dom strings provided and populate class variables ###
-        this.#domProductTitleString = domProductTitleString;
-
-        // Check and clean
-        const hasKgInCents = domPriceCentsWeightString?.includes('kg') ? true : false;
-        const domPriceCentsString = parseInt(domPriceCentsWeightString);
-
-        // Store the price components
-        this.#domPriceDollarsString = domPriceDollarsString;
-        this.#domPriceCentsString = domPriceCentsString;
+//        this.#hasKgInCents = this.#domPriceCentsWeightString?.includes('kg') ? true : false;
+        this.#domPriceCentsString = parseInt(this.#domPriceCentsWeightString);
 
         // Store values related to the main price and quantity values
-        const values = this.#extractPerPackageQuantityValues(domWeightString, domProductTitleString);
+        const values = this.#extractPerPackageQuantityValues();
         if (values) {
             this.#packageQuantity = values.quantity;
             this.#packageQuantityUnits = values.quantityUnits;
@@ -194,10 +188,8 @@ class ProductPriceAndWeightInfo {
             this.#hasWeightInWeightString = values.hasWeight;
         }
 
-        this.#normalizePerPackageQuantityValues();
-
         // Store values related to the per-unit pricing that is included for *some* products
-        const unitValues = this.#extractPerUnitQuantityValues(domUnitPriceString);
+        const unitValues = this.#extractPerUnitQuantityValues();
         if (unitValues) {
                 this.#perUnitQuantity = unitValues.quantity;
                 this.#perUnitQuantityUnits = unitValues.quantityUnits;
@@ -206,115 +198,34 @@ class ProductPriceAndWeightInfo {
                 this.#perUnitQuantityPrice = unitValues.price;
         }
 
-        this.#normalizePerUnitQuantityValues();
-
-        // Figure out the PricingType based on the data we've gathered
-        if (this.#packagePricingType === PricingTypes.BY_EACH || this.#perUnitQuantityPricingType === PricingTypes.BY_EACH) {
-            if (this.#hasWeightInWeightString) {
-                this.#authPricingType = PricingTypes.BY_WEIGHT;
-            }
-            else {
-                this.#authPricingType = PricingTypes.BY_EACH;
-            }
-        }
-        else if (this.#packagePricingType === PricingTypes.BY_VOLUME || this.#perUnitQuantityPricingType === PricingTypes.BY_VOLUME) {
-            this.#authPricingType = PricingTypes.BY_VOLUME;
-        }
-        else if (this.#packagePricingType === PricingTypes.BY_WEIGHT || this.#perUnitQuantityPricingType === PricingTypes.BY_WEIGHT) {
-            this.#authPricingType = PricingTypes.BY_WEIGHT;
-        }
-        else {
-            console.log('Unknown pricing type: ', [domProductTitleString, domUnitPriceString, domWeightString]);
-        }
-
         // Calculate the principle unit price based on the domUnitPriceString
         // Because values have been normalized the principle unit price is just the per-unit price
-        if (this.#perUnitQuantity !== 0) {
+        if (this.#perUnitQuantity || 0 !== 0) {
             this.#principleUnitPrice = this.#perUnitQuantityPrice;
         }
 
-        // Determine the product variation and store on the class
-        const productVariation = this.#deriveProductVariation(domUnitPriceString, hasKgInCents);
-        if (productVariation) {
-            this.#productVariation = productVariation
-        }
-        else {
-            console.log('Indeterminite product variation: ', this.domProductTitleString);
-        }
-    }
-
-
-    get productTitle() {
-        return this.#domProductTitleString;
-    }
-    
-
-    get productVariation() {
-        return this.#productVariation;
-    }
-
-
-    // Rules to determine the specific product variation
-    #deriveProductVariation(domUnitPriceString, hasKgInCents) {
-        if (domUnitPriceString === '') {
-            if (this.#hasWeightInWeightString) {
-                return ProductVariations.PRODUCT_1;
-            }
-            else {
-                if (hasKgInCents) {
-
-                }
-                else {
-                    return ProductVariations.PRODUCT_4;
-                }
-            }
-        } 
-        else {
-            if (this.#hasWeightInWeightString) {
-                if (this.#authPricingType === PricingTypes.BY_WEIGHT) {
-                    return ProductVariations.PRODUCT_7;
-                }
-                else {
-                    return ProductVariations.PRODUCT_3;
-                }
-            }
-            else {
-                if (hasKgInCents) {
-                    return ProductVariations.PRODUCT_2;
-                }
-                else {
-                    if (this.#numItemsInPackage > 1) {
-                        return ProductVariations.PRODUCT_6;
-                    }
-                    else {
-                        return ProductVariations.PRODUCT_5;
-                    }
-                }                
-            }
+        // If the product variation is PRODUCT_8 then set class variables explicity 
+        // before calling normalize
+        if (this.productVariation == ProductVariations.PRODUCT_8) {
+            this.#packageQuantity = 1;              // 1kg
+            this.#packageQuantityUnits = "kg";      // 1kg
         }
 
-        console.log('Product variation not found')
-        return null;
-    }
+        this.#normalizePerPackageQuantityValues();
+        this.#normalizePerUnitQuantityValues();
 
+        if (this.#authPricingType === undefined || this.#authPricingType === null) {
+            console.error('Indeterminite pricing type: ', [this.#domProductTitleString, this.#domUnitPriceString, this.#domWeightString]);
+        }
 
-    #normalizePerPackageQuantityValues() {
-        if (this.#packageQuantityUnits && this.#packageQuantity) {
-            if (this.#packageQuantityUnits === 'kg' || this.#packageQuantityUnits === 'L') {
-                this.#packageQuantity *= 1000;
-                this.#packageQuantityUnits = (this.#packageQuantityUnits === 'kg') ? 'g' : 'mL';
-            }
+        if (this.productVariation === undefined || this.productVariation === null) {
+            console.error('Indeterminite product variation: ', this.#domProductTitleString);
         }
     }
 
 
-    #normalizePerUnitQuantityValues() {
-        if (this.#perUnitQuantityUnits && this.#perUnitQuantity) {
-            if (this.#perUnitQuantityUnits === 'kg' || this.#perUnitQuantityUnits === 'L') {
-                this.#perUnitQuantity *= 1000;
-                this.#perUnitQuantityUnits = (this.#perUnitQuantityUnits === 'kg') ? 'g' : 'mL';
-            }
-        }
+    get pricingType() {
+        return this.#authPricingType;
     }
 
 
@@ -325,52 +236,57 @@ class ProductPriceAndWeightInfo {
     }
 
 
-    // Return the principle unit price if it exists. This ensures the unit price published by the 
+    // Return the principle unit price if it exists. This ensures the unit price published by the
     // vendor has priority if it exists.
     get sortableUnitPrice() {
-        if (this.#authPricingType === PricingTypes.BY_EACH) {
-            if (this.productVariation === ProductVariations.PRODUCT_5) {
-                return this.advertisedPrice.toFixed(2);
-            }
-            else if (this.#productVariation === ProductVariations.PRODUCT_6) {
-                return this.unitPricePerItem.toFixed(2);
-            }
-            else if (this.unitPricePerItem && (this.unitPricePerItem || 0) > 0) {
-                return this.unitPricePerItem.toFixed(2);
-            }
-            else {
-                return this.advertisedPrice.toFixed(2);
-            }
-        } 
-        else if (this.#productVariation === ProductVariations.PRODUCT_7) {
-            return this.unitPricePerItem.toFixed(2);
+        let sortablePrice;
+
+        switch (this.productVariation) {
+            case ProductVariations.PRODUCT_4:
+                sortablePrice = this.advertisedPrice;
+                break;
+
+            case ProductVariations.PRODUCT_5:
+                sortablePrice = this.advertisedPrice;
+                break;
+
+            case ProductVariations.PRODUCT_6:
+                sortablePrice = this.unitPricePerItem;
+                break;
+
+            case ProductVariations.PRODUCT_7:
+                sortablePrice = this.unitPricePerItem;
+                break;
+
+            case ProductVariations.PRODUCT_8:
+                sortablePrice = this.unitPricePerItem;
+                break;
+
+            default:
+                if (this.#authPricingType === PricingTypes.BY_EACH) {
+                    if (this.unitPricePerItem && (this.unitPricePerItem || 0) > 0) {
+                        sortablePrice = this.unitPricePerItem;
+                    }
+                    else {
+                        sortablePrice = this.advertisedPrice;
+                    }
+                }
+                else {
+                    sortablePrice = this.unitPricePerItem;
+                }
         }
-        else {
-            return this.unitPricePerItem.toFixed(2);
-        }
+
+        return sortablePrice.toFixed(2);
     }
 
 
     // A free-text formatted unit price string
     get friendlyPriceString() {
         if (this.#authPricingType === PricingTypes.BY_EACH) {
-            return `$${this.sortableUnitPrice} ${this.#units}`;
+            return `$${this.sortableUnitPrice} ${this.units}`;
         }
         else {
-            return `$${this.sortableUnitPrice} per ${this.#units}`;
-        }
-    }
-
-
-    get #units() {
-        if (this.#authPricingType === PricingTypes.BY_WEIGHT) {
-            return '100g';
-        }
-        else if (this.#authPricingType === PricingTypes.BY_VOLUME) {
-            return '100mL';
-        }
-        else {
-            return 'ea';
+            return `$${this.sortableUnitPrice} per ${this.units}`;
         }
     }
 
@@ -381,7 +297,7 @@ class ProductPriceAndWeightInfo {
 
         if (this.productVariation == ProductVariations.PRODUCT_7) {
             price = this.advertisedPrice / (this.#packageQuantity / 100);
-        } 
+        }
         else if (this.#hasWeightInWeightString && this.pricingType === PricingTypes.BY_EACH && this.#perUnitQuantity === 1) {
             price = this.advertisedPrice / (this.#packageQuantity / 100);
         }
@@ -407,14 +323,126 @@ class ProductPriceAndWeightInfo {
         return this.#authPricingType;
     }
 
+
+    get units() {
+        if (this.#authPricingType === PricingTypes.BY_WEIGHT) {
+            return '100g';
+        }
+        else if (this.#authPricingType === PricingTypes.BY_VOLUME) {
+            return '100mL';
+        }
+        else {
+            return this.#packageQuantityUnits;
+        }
+    }
+
+
+    get #hasKgInCents() {
+        return this.#domPriceCentsWeightString?.includes('kg') ? true : false;
+    }
+
+
+    get productVariation() {
+        let productVariation;
+
+        if (this.#hasKgInCents && this.#domSingleUnitPriceString !== "") {
+            productVariation = ProductVariations.PRODUCT_8;
+        }
+        else if (this.#domUnitPriceString === '') {
+            if (this.#hasWeightInWeightString) {
+                productVariation = ProductVariations.PRODUCT_1;
+            }
+            else {
+                if (this.#hasKgInCents) {
+                    // NOT IMPLEMENTED
+                }
+                else {
+                    productVariation = ProductVariations.PRODUCT_4;
+                }
+            }
+        }
+        else {
+            if (this.#hasWeightInWeightString) {
+                if (this.#authPricingType === PricingTypes.BY_WEIGHT) {
+                    productVariation = ProductVariations.PRODUCT_7;
+                }
+                else {
+                    productVariation = ProductVariations.PRODUCT_3;
+                }
+            }
+            else {
+                if (this.#hasKgInCents) {
+                    productVariation = ProductVariations.PRODUCT_2;
+                }
+                else {
+                    if (this.#numItemsInPackage > 1) {
+                        productVariation = ProductVariations.PRODUCT_6;
+                    }
+                    else {
+                        productVariation = ProductVariations.PRODUCT_5;
+                    }
+                }
+            }
+        }
+
+        return productVariation;
+    }
+
+
+    get #authPricingType() {
+        let pricingType;
+
+        // Figure out the PricingType based on the data we've gathered
+        if (this.#hasKgInCents && this.#domSingleUnitPriceString !== "") {
+            pricingType = PricingTypes.BY_WEIGHT;
+        }
+        else if (this.#packagePricingType === PricingTypes.BY_EACH || this.#perUnitQuantityPricingType === PricingTypes.BY_EACH) {
+            if (this.#hasWeightInWeightString) {
+                pricingType = PricingTypes.BY_WEIGHT;
+            }
+            else {
+                pricingType = PricingTypes.BY_EACH;
+            }
+        }
+        else if (this.#packagePricingType === PricingTypes.BY_VOLUME || this.#perUnitQuantityPricingType === PricingTypes.BY_VOLUME) {
+            pricingType = PricingTypes.BY_VOLUME;
+        }
+        else if (this.#packagePricingType === PricingTypes.BY_WEIGHT || this.#perUnitQuantityPricingType === PricingTypes.BY_WEIGHT) {
+            pricingType = PricingTypes.BY_WEIGHT;
+        }
+
+        return pricingType;
+    }
+
+
+    #normalizePerPackageQuantityValues() {
+        if (this.#packageQuantityUnits && this.#packageQuantity) {
+            if (this.#packageQuantityUnits === 'kg' || this.#packageQuantityUnits === 'L') {
+                this.#packageQuantity *= 1000;
+                this.#packageQuantityUnits = (this.#packageQuantityUnits === 'kg') ? 'g' : 'mL';
+            }
+        }
+    }
+
+
+    #normalizePerUnitQuantityValues() {
+        if (this.#perUnitQuantityUnits && this.#perUnitQuantity) {
+            if (this.#perUnitQuantityUnits === 'kg' || this.#perUnitQuantityUnits === 'L') {
+                this.#perUnitQuantity *= 1000;
+                this.#perUnitQuantityUnits = (this.#perUnitQuantityUnits === 'kg') ? 'g' : 'mL';
+            }
+        }
+    }
+
+
     // Take the unit price string found in the DOM and extract price, weight, and units from it.
     // Generally a fallback method as this is calculated by the vendor and if we don't necessarily want
     // to assume it's correct.
     // Overwrite price, weight, units, pricingType
-    #extractPerUnitQuantityValues(unitPriceString) {
+    #extractPerUnitQuantityValues() {
         // DOM string is formatted something like '$0.48 / 100g', '$3.99 / 1ea'
         const regex = /^\$([\d.]{1,5})(?: \/ )(\d{1,3})(mL|L|g|kg|ea)$/gi;
-        const result = regex.exec(unitPriceString);
+        const result = regex.exec(this.#domUnitPriceString);
 
         if (result) {
             const perUnitQuantityPrice = parseFloat(result[1]).toFixed(2);
@@ -441,14 +469,14 @@ class ProductPriceAndWeightInfo {
                 price:          perUnitQuantityPrice
             };
             return values;
-        }            
+        }
 
         return null;
     }
 
     // Receives a string of formatted text from the ui and returns a numeric weight suitable for
     // factoring into calculations to determine the unit price of an item.
-    #extractPerPackageQuantityValues(weightString, productTitleString) {
+        #extractPerPackageQuantityValues() {
         let packageQuantity = 1;            // There is at least 1 of a thing in a package
         let quantityMultipler = 1;
         let packageQuantityUnits = '';
@@ -460,7 +488,7 @@ class ProductPriceAndWeightInfo {
                 // Strings in the format '100g pottles 1200g'
                 regex: /^(\d{1,5})g.*?(\d{1,5})g$/gi,
                 process: (result) => {
-                    quantityMultipler = 1; //parseNumberOfItemsFromPriceString(productTitleString);
+                    quantityMultipler = 1;
                     packageQuantity = parseInt(result[2]);
                     packageQuantityUnits = 'g';
                     packagePricingType = PricingTypes.BY_WEIGHT;
@@ -504,7 +532,7 @@ class ProductPriceAndWeightInfo {
                 // Strings in the format '100g pottles'
                 regex: /^(\d{1,5})g.*?$/gi,
                 process: (result) => {
-                    quantityMultipler = 1; //parseNumberOfItemsFromPriceString(productTitleString);
+                    quantityMultipler = 1;
                     packageQuantity = quantityMultipler * parseInt(result[1]);
                     packageQuantityUnits = 'g';
                     packagePricingType = PricingTypes.BY_WEIGHT;
@@ -518,19 +546,47 @@ class ProductPriceAndWeightInfo {
                     quantityMultipler = parseInt(result[1]);
 
                     // Find other values from the product title;
-                    const values = this.#parseQuantityAndUnitsFromPriceString(productTitleString);
+                    const values = this.#parseQuantityAndUnitsFromPriceString();
                     if (values) {
                         packageQuantity = values.quantity;
                         packageQuantityUnits = values.quantityUnits;
                         packagePricingType = (packageQuantityUnits === 'kg' || packageQuantityUnits === 'g') ? PricingTypes.BY_WEIGHT : PricingTypes.BY_VOLUME;
                         weightInWeightString = true;
                     }
+                    else {
+                        packageQuantity = quantityMultipler;
+                        packageQuantityUnits = `for ${packageQuantity}`;
+                        packagePricingType = PricingTypes.BY_EACH;
+                        weightInWeightString = false;
+                    }
+                }
+            },
+            {
+                // Strings in the format 'Each' - no weight, priced by ea
+                regex: /^(Each|1ea)$/i,
+                process: (result) => {
+                    quantityMultipler = 1;
+                    packageQuantity = 1;
+                    packageQuantityUnits = 'ea';
+                    packagePricingType = PricingTypes.BY_EACH;
+                    weightInWeightString = false;
+                }
+            },
+            {
+                // Strings in the format 'Medium size 1ea' - no weight, priced by ea
+                regex: /Medium size 1ea/i,
+                process: (result) => {
+                    quantityMultipler = 1;
+                    packageQuantity = 1;
+                    packageQuantityUnits = 'ea';
+                    packagePricingType = PricingTypes.BY_EACH;
+                    weightInWeightString = false;
                 }
             }
         ];
 
         for (let { regex, process } of patterns) {
-            const result = regex.exec(weightString);
+            const result = regex.exec(this.#domWeightString);
             if (result) {
                 process(result);
                 const values = {
@@ -541,19 +597,16 @@ class ProductPriceAndWeightInfo {
                     hasWeight:      weightInWeightString
                 };
 
-                // TODO: If quantityMultipler > 1 probably need to increase the productQuantity if the unit weight is
-                // not stated correctly.
-
                 return values;
             }
         }
         return null;
     }
 
-    #parseQuantityAndUnitsFromPriceString (productTitle) {
+    #parseQuantityAndUnitsFromPriceString() {
         // Look for a numeric value preceeded by 'g' or 'kg'
         let regex = /(\d{1,3})(g|kg)/i;
-        let result = regex.exec(productTitle);
+        let result = regex.exec(this.#domProductTitleString);
         if (result) {
             const values = {
                 quantity:       parseInt(result[1]),
@@ -580,7 +633,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 
         case "change_color":
             // remove the banner container
-            const el = document.querySelector('.banner-container');            
+            const el = document.querySelector('.banner-container');
             if (el) {
                 el.remove();
             }
@@ -605,8 +658,8 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
                 img.setAttribute('title', `PV: ${product.productVariation}, Price: ${product.friendlyPriceString}`);
 
                 // Set the background color of the product card
-                element.style.backgroundColor = product.unitPricePerItem === Infinity 
-                    ? 'red' 
+                element.style.backgroundColor = product.unitPricePerItem === Infinity
+                    ? 'red'
                     : getBackgroundColor(product.pricingType);
 
                 // // Capture the output while we're debugging.
@@ -669,7 +722,7 @@ function parseNumberOfItemsFromPriceString (productTitle) {
         qty = parseInt(result[1]);
         return qty;
     }
-    
+
     return 0;
 }
 
@@ -696,7 +749,8 @@ const ProductVariations = Object.freeze({
     PRODUCT_4:  4,
     PRODUCT_5:  5,
     PRODUCT_6:  6,
-    PRODUCT_7:  7
+    PRODUCT_7:  7,
+    PRODUCT_8:  8
 })
 
 function splitCurrency(amount) {
