@@ -175,11 +175,18 @@ class ProductPriceAndWeightInfo {
         this.#domPriceDollarsString = replaceNbsp(getTextContentOrDefault(domElement, 'h3.presentPrice > em'));
         this.#domPriceCentsWeightString = replaceNbsp(getTextContentOrDefault(domElement, 'h3.presentPrice > span'));
 
-//        this.#hasKgInCents = this.#domPriceCentsWeightString?.includes('kg') ? true : false;
+        // Derive additional data
         this.#domPriceCentsString = parseInt(this.#domPriceCentsWeightString);
 
+        // Default values. Assume that everything can be purchased 'each' for the advertised price
+        this.#packageQuantity = 1;
+        this.#packageQuantityUnits = 'ea';
+        this.#numItemsInPackage = 1;
+        this.#packagePricingType = PricingTypes.BY_EACH;
+        this.#hasWeightInWeightString = false;
+
         // Store values related to the main price and quantity values
-        const values = this.#extractPerPackageQuantityValues();
+        const values = this.#extractPerPackageQuantityValues(this.#domWeightString, this.#domProductTitleString);
         if (values) {
             this.#packageQuantity = values.quantity;
             this.#packageQuantityUnits = values.quantityUnits;
@@ -189,13 +196,15 @@ class ProductPriceAndWeightInfo {
         }
 
         // Store values related to the per-unit pricing that is included for *some* products
-        const unitValues = this.#extractPerUnitQuantityValues();
-        if (unitValues) {
-                this.#perUnitQuantity = unitValues.quantity;
-                this.#perUnitQuantityUnits = unitValues.quantityUnits;
-                this.#perUnitNumItems = unitValues.numItems;
-                this.#perUnitQuantityPricingType = unitValues.pricingType;
-                this.#perUnitQuantityPrice = unitValues.price;
+        if (this.#domUnitPriceString || '' !== '') {
+            const unitValues = this.#extractPerUnitQuantityValues(this.#domUnitPriceString);
+            if (unitValues) {
+                    this.#perUnitQuantity = unitValues.quantity;
+                    this.#perUnitQuantityUnits = unitValues.quantityUnits;
+                    this.#perUnitNumItems = unitValues.numItems;
+                    this.#perUnitQuantityPricingType = unitValues.pricingType;
+                    this.#perUnitQuantityPrice = unitValues.price;
+            }
         }
 
         // Calculate the principle unit price based on the domUnitPriceString
@@ -332,7 +341,12 @@ class ProductPriceAndWeightInfo {
             return '100mL';
         }
         else {
-            return this.#packageQuantityUnits;
+            if (this.#packageQuantityUnits) {
+                return this.#packageQuantityUnits;
+            }
+            else {
+                return 'each';
+            }
         }
     }
 
@@ -349,16 +363,11 @@ class ProductPriceAndWeightInfo {
             productVariation = ProductVariations.PRODUCT_8;
         }
         else if (this.#domUnitPriceString === '') {
-            if (this.#hasWeightInWeightString) {
+            if (this.#hasWeightInWeightString || '' !== '') {
                 productVariation = ProductVariations.PRODUCT_1;
             }
             else {
-                if (this.#hasKgInCents) {
-                    // NOT IMPLEMENTED
-                }
-                else {
-                    productVariation = ProductVariations.PRODUCT_4;
-                }
+                productVariation = ProductVariations.PRODUCT_4;
             }
         }
         else {
@@ -439,15 +448,16 @@ class ProductPriceAndWeightInfo {
     // Generally a fallback method as this is calculated by the vendor and if we don't necessarily want
     // to assume it's correct.
     // Overwrite price, weight, units, pricingType
-    #extractPerUnitQuantityValues() {
+    #extractPerUnitQuantityValues(unitPriceString) {
         // DOM string is formatted something like '$0.48 / 100g', '$3.99 / 1ea'
         const regex = /^\$([\d.]{1,5})(?: \/ )(\d{1,3})(mL|L|g|kg|ea)$/gi;
-        const result = regex.exec(this.#domUnitPriceString);
+        const result = regex.exec(unitPriceString);
 
         if (result) {
             const perUnitQuantityPrice = parseFloat(result[1]).toFixed(2);
             const perUnitQuantity = parseInt(result[2]);
             const perUnitQuantityUnits = result[3];
+
             let perUnitQuantityPricingType;
 
             // Set the pricing type based on the values expected
@@ -476,11 +486,11 @@ class ProductPriceAndWeightInfo {
 
     // Receives a string of formatted text from the ui and returns a numeric weight suitable for
     // factoring into calculations to determine the unit price of an item.
-        #extractPerPackageQuantityValues() {
-        let packageQuantity = 1;            // There is at least 1 of a thing in a package
-        let quantityMultipler = 1;
+    #extractPerPackageQuantityValues(weightString, productTitleString) {
+        let packageQuantity = 1;
         let packageQuantityUnits = '';
-        let packagePricingType = '';
+        let quantityMultipler = 1;
+        let packagePricingType = null;
         let weightInWeightString = false;
 
         const patterns = [
@@ -546,7 +556,7 @@ class ProductPriceAndWeightInfo {
                     quantityMultipler = parseInt(result[1]);
 
                     // Find other values from the product title;
-                    const values = this.#parseQuantityAndUnitsFromPriceString();
+                    const values = this.#parseQuantityAndUnitsFromProductTitle(productTitleString);
                     if (values) {
                         packageQuantity = values.quantity;
                         packageQuantityUnits = values.quantityUnits;
@@ -586,7 +596,7 @@ class ProductPriceAndWeightInfo {
         ];
 
         for (let { regex, process } of patterns) {
-            const result = regex.exec(this.#domWeightString);
+            const result = regex.exec(weightString);
             if (result) {
                 process(result);
                 const values = {
@@ -603,10 +613,11 @@ class ProductPriceAndWeightInfo {
         return null;
     }
 
-    #parseQuantityAndUnitsFromPriceString() {
+    #parseQuantityAndUnitsFromProductTitle(productTitleString) {
         // Look for a numeric value preceeded by 'g' or 'kg'
         let regex = /(\d{1,3})(g|kg)/i;
-        let result = regex.exec(this.#domProductTitleString);
+        let result = regex.exec(productTitleString);
+
         if (result) {
             const values = {
                 quantity:       parseInt(result[1]),
