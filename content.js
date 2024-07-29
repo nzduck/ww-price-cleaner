@@ -180,10 +180,10 @@ class ProductPriceAndWeightInfo {
 
         // Default values. Assume that everything can be purchased 'each' for the advertised price
         this.#packageQuantity = 1;
-        this.#packageQuantityUnits = 'ea';
+        this.#packageQuantityUnits = '';
         this.#numItemsInPackage = 1;
-        this.#packagePricingType = PricingTypes.BY_EACH;
-        this.#hasWeightInWeightString = false;
+        this.#packagePricingType = null;
+        this.#hasWeightInWeightString = null;
 
         // Store values related to the main price and quantity values
         const values = this.#extractPerPackageQuantityValues(this.#domWeightString, this.#domProductTitleString);
